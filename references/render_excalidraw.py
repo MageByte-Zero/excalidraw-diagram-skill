@@ -120,7 +120,7 @@ def render(
         print(f"ERROR: Template not found at {template_path}", file=sys.stderr)
         sys.exit(1)
 
-    template_url = template_path.as_uri()
+    template_html = template_path.read_text(encoding="utf-8")
 
     with sync_playwright() as p:
         try:
@@ -137,11 +137,11 @@ def render(
             device_scale_factor=scale,
         )
 
-        # Load the template
-        page.goto(template_url)
+        # set_content() avoids file:// CORS blocks on ES module imports
+        page.set_content(template_html)
 
-        # Wait for the ES module to load (imports from esm.sh)
-        page.wait_for_function("window.__moduleReady === true", timeout=30000)
+        # Wait for UMD scripts (React + ExcalidrawLib) to load
+        page.wait_for_function("window.__moduleReady === true", timeout=60000)
 
         # Inject the diagram data and render
         json_str = json.dumps(data)
