@@ -190,6 +190,7 @@ For each concept, find the visual pattern that mirrors its behavior:
 | Transforms input to output | **Assembly line** (before → process → after) |
 | Compares two things | **Side-by-side** (parallel with contrast) |
 | Separates into phases | **Gap/Break** (visual separation between sections) |
+| Shows parallel responsibilities / team lanes | **Swimlane** (`frame` elements side-by-side, 60px gap) |
 
 ### Step 3: Ensure Variety
 For multi-concept diagrams: **each major concept must use a different visual pattern**. No uniform cards or grids.
@@ -550,3 +551,4 @@ uv run playwright install chromium
 25. **Arrows land correctly**: Arrows connect to intended elements without crossing others
 26. **Readable at export size**: Text is legible in the rendered PNG
 27. **Balanced composition**: No large empty voids or overcrowded regions
+28. **Arrow bindings wired**: Every arrow that visually connects two shapes has non-null `startBinding`/`endBinding`, AND both shapes list the arrow in their `boundElements`. See `references/element-templates.md` → "Bound Arrow" for the complete 3-element wiring pattern. Null bindings cause arrows to drift when shapes are moved.
