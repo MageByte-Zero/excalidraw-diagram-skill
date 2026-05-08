@@ -50,6 +50,38 @@
           root.innerHTML = "";
           root.appendChild(svg);
 
+          // Expand viewBox to cover actual font-rendered text bounds (prevents right-edge clipping).
+          // Text rendered with @font-face often exceeds stored element dimensions — DOM measurements
+          // are only accurate after document.fonts.ready resolves.
+          svg.setAttribute("overflow", "visible");
+          await document.fonts.ready;
+          const ctm = svg.getScreenCTM();
+          if (ctm) {
+            const inv = ctm.inverse();
+            let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+            svg.querySelectorAll("*").forEach(el => {
+              try {
+                const r = el.getBoundingClientRect();
+                if (!r.width && !r.height) return;
+                const p0 = new DOMPoint(r.left, r.top).matrixTransform(inv);
+                const p1 = new DOMPoint(r.right, r.bottom).matrixTransform(inv);
+                x0 = Math.min(x0, p0.x, p1.x);
+                y0 = Math.min(y0, p0.y, p1.y);
+                x1 = Math.max(x1, p0.x, p1.x);
+                y1 = Math.max(y1, p0.y, p1.y);
+              } catch (_) {}
+            });
+            if (isFinite(x0)) {
+              const pad = 40;
+              const w = Math.ceil(x1 - x0 + pad * 2);
+              const h = Math.ceil(y1 - y0 + pad * 2);
+              svg.setAttribute("viewBox", `${x0 - pad} ${y0 - pad} ${w} ${h}`);
+              svg.setAttribute("width", String(w));
+              svg.setAttribute("height", String(h));
+            }
+          }
+          svg.removeAttribute("overflow");
+
           window.__renderComplete = true;
           window.__renderError = null;
           return { success: true, width: svg.getAttribute("width"), height: svg.getAttribute("height") };
