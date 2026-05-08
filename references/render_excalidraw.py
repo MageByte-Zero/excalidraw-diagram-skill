@@ -27,10 +27,74 @@ def validate_excalidraw(data: dict) -> list[str]:
 
     if "elements" not in data:
         errors.append("Missing 'elements' array")
-    elif not isinstance(data["elements"], list):
+        return errors
+    if not isinstance(data["elements"], list):
         errors.append("'elements' must be an array")
-    elif len(data["elements"]) == 0:
+        return errors
+    if len(data["elements"]) == 0:
         errors.append("'elements' array is empty — nothing to render")
+        return errors
+
+    elements = data["elements"]
+    VALID_TYPES = {
+        "rectangle", "ellipse", "diamond", "text", "arrow",
+        "line", "freedraw", "image", "frame", "embeddable",
+    }
+
+    # Pass 1: collect IDs and check per-element fields
+    ids_seen: set[str] = set()
+    all_ids: set[str] = {el["id"] for el in elements if "id" in el}
+
+    for i, el in enumerate(elements):
+        el_id = el.get("id", f"<element {i}>")
+        el_type = el.get("type", "")
+
+        if el_type and el_type not in VALID_TYPES:
+            errors.append(
+                f"Element '{el_id}': unknown type '{el_type}' "
+                f"(typo? valid types: {', '.join(sorted(VALID_TYPES))})"
+            )
+
+        if "id" in el:
+            if el["id"] in ids_seen:
+                errors.append(f"Duplicate element id: '{el['id']}'")
+            else:
+                ids_seen.add(el["id"])
+
+        # NaN / Infinity in geometry fields cause silent render distortions
+        for field in ("x", "y", "width", "height"):
+            val = el.get(field)
+            if isinstance(val, float) and (val != val or abs(val) == float("inf")):
+                errors.append(f"Element '{el_id}': '{field}' is NaN or Infinity")
+
+    # Pass 2: cross-reference checks (requires all IDs collected first)
+    for el in elements:
+        el_id = el.get("id", "?")
+
+        for binding_key in ("startBinding", "endBinding"):
+            binding = el.get(binding_key)
+            if isinstance(binding, dict):
+                ref = binding.get("elementId")
+                if ref and ref not in all_ids:
+                    errors.append(
+                        f"Arrow '{el_id}': {binding_key}.elementId '{ref}' does not exist"
+                    )
+
+        container_id = el.get("containerId")
+        if container_id and container_id not in all_ids:
+            errors.append(
+                f"Text element '{el_id}': containerId '{container_id}' does not exist"
+            )
+
+        bound_elements = el.get("boundElements")
+        if isinstance(bound_elements, list):
+            for be in bound_elements:
+                if isinstance(be, dict):
+                    ref = be.get("id")
+                    if ref and ref not in all_ids:
+                        errors.append(
+                            f"Element '{el_id}': boundElements references '{ref}' which does not exist"
+                        )
 
     return errors
 
@@ -155,6 +219,21 @@ def render(
 
         # Wait for render completion signal
         page.wait_for_function("window.__renderComplete === true", timeout=15000)
+
+        # Resize viewport to match the (possibly font-expanded) SVG dimensions so
+        # svg_el.screenshot() captures the full element without viewport clipping.
+        try:
+            svg_dims = page.evaluate("""() => {
+                const el = document.querySelector('#root svg');
+                if (!el) return null;
+                const w = parseFloat(el.getAttribute('width') || '0');
+                const h = parseFloat(el.getAttribute('height') || '0');
+                return (w > 0 && h > 0) ? {width: Math.ceil(w) + 80, height: Math.ceil(h) + 80} : null;
+            }""")
+            if svg_dims:
+                page.set_viewport_size({"width": svg_dims["width"], "height": svg_dims["height"]})
+        except Exception:
+            pass  # non-fatal; fall back to initial viewport
 
         # Screenshot the SVG element
         svg_el = page.query_selector("#root svg")
